@@ -1,0 +1,180 @@
+## Reading the manifest probe csv file
+
+d <- read.csv('/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted.csv.gz')
+
+
+
+## making sure sequence is in correct format
+
+d$AlleleA_Probe_Sequence <- gsub('r', 'A', d$AlleleA_Probe_Sequence)
+
+d$AlleleA_Probe_Sequence <- toupper(d$AlleleA_Probe_Sequence)
+
+d$AlleleB_Probe_Sequence <- gsub('r', 'A', d$AlleleB_Probe_Sequence)
+
+d$AlleleB_Probe_Sequence <- toupper(d$AlleleB_Probe_Sequence)
+
+## write fasta file for the sequences
+
+seqA <- as.list(d$AlleleA_Probe_Sequence)
+seqB <- as.list(d$AlleleB_Probe_Sequence)
+
+id <- d$Probe_ID
+
+library(seqinr)
+write.fasta(seqA,id,'/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_SequenceA.fasta')
+write.fasta(seqB,id,'/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_SequenceB.fasta')
+
+#Quiting R and using linux commands for the next steps
+
+#cd /mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/
+  
+#biscuit align -t 4 ~/references/mm10/biscuit/mm10.fa mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_SequenceA | samtools view -O BAM -o mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_MappedA.bam
+#biscuit align -t 4 ~/references/mm10/biscuit/mm10.fa mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_SequenceB | samtools view -O BAM -o mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_MappedB.bam
+
+##inside R
+
+R
+
+library(Rsamtools)
+
+
+d <- read.csv('/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted.csv.gz')
+
+#Reading Biscuit Mapped Bam files
+
+bamA <- data.frame(scanBam("/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_MappedA.bam"))
+bamB <- data.frame(scanBam("/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_MappedB.bam"))
+
+#Renaming the column names
+
+names(bamA) <- paste("AlleleA_MappedInfo", names(bamA), sep = "_")
+names(bamB) <- paste("AlleleB_MappedInfo", names(bamB), sep = "_")
+
+#combining both into one df
+
+df <- cbind(d, bamA, bamB)
+
+# checking how many were mapped based on design type, flag of 4 means unmapped
+# to check what a SAM flag means use : https://broadinstitute.github.io/picard/explain-flags.html
+# 4 means unmapped
+
+
+t1 <- subset(df, DESIGN=="I" & AlleleA_MappedInfo_flag == 4)
+
+nrow(t1)
+
+#0 unmapped
+
+For type 2, probes could be mapped at allele A or allele B therefore
+
+#Type 2 could map to both allele A or b so checked for unmapped in both
+
+t2 <- subset(df, DESIGN=="II" & AlleleA_MappedInfo_flag == 4 & AlleleB_MappedInfo_flag == 4)
+nrow(t2)
+
+#2410 unmapped
+
+#saved the unmapped
+
+#saveRDS(df, file = "/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_Unmapped.rds")
+
+#saveRDS(df, file = "/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_Mapped.rds")
+
+
+## CPG Annotation step
+
+
+
+#Creating a reference bed file and extendting the reference TSS interval 1500 bp upstream and storing in new file
+
+
+# outside R
+
+# awk '$4=="+"{print $1,$2-1500,$3,$0;} $4=="-"{print $1,$2,$3+1500,$0}' /mnt/isilon/zhou_lab/projects/20191221_references/mm10/annotation/gtf/Mus_musculus.GRCm38.99.gtf.sorted.bed >> a.text
+
+
+#Removing negative numbers from the TSS (2nd column) and stroing file as cleaned reference file
+
+#awk '$2<0{$2=0}1' a.text >> CleanedReference.bed
+
+
+## inside R
+R
+
+x <- read.table("CleanedReference.bed")
+
+#after checking the change makes sense, remove the original locations (columns 3 to 6)
+x <- cbind(x[1:3], x[7:length(x)])
+
+write.table(x, 'TSSeditedReference.bed'quote=F, sep="\t", row.names=F, col.names=F)
+
+#For the Annotation, need chrom. +  seq. start and seq. end positions
+#No end pos. given, created end pos. from mapped end pos. + 2
+
+mappedBed <- cbind(df[14], df[16], df[16] + 2, df$Probe_ID)
+mappedBed <- na.omit(mappedBed)
+
+write.table(mappedBed, file="/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mappedBed.bed", quote=F, sep="\t", row.names=F, col.names=F)
+
+# bed tool inersect, this code is in linux terminal, outside R
+
+#intersect with Probes with Gene Info in TSS =/- 1500 changed file
+# bedtools intersect -a TSSeditedReference.bed -b mappedBed.bed -wo -bed  >> Reference_Matched_Probes.bed
+
+
+#Intersect Reference Matched Probes with CPG info
+# bedtools intersect -a  Reference_Matched_Probes.bed -b ~/references/mm10/annotation/cpg_island/mm10_cpgIsland_FromUCSC.bed -wo -bed  >> Reference+CPG_Matched_Probes.bed
+
+#Calculating distance to TSS
+
+#if + strand , then do Transtript Start - Probe Start
+#if - strand do Transcript End - Probe End
+#Strand info in column 4, TSS and TSE on col. 2 and 3 and Probe start and end on col. 15 and 16
+
+# awk '{if($4=="+"){print $2-$15;}if($4=="-"){print $16-$3;}}' Reference+CPG_Matched_Probes.bed >> TSS_distance.bed
+
+# in R
+
+bed <- as.data.frame(read.table("/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/Reference+CPG_Matched_Probes.bed",header = FALSE, sep="\t",stringsAsFactors=FALSE))
+bed2 <- as.data.frame(read.table("/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/TSS_distance.bed",header = FALSE, sep="\t",stringsAsFactors=FALSE))
+
+df2 <- cbind(bed, bed2)
+
+
+#For the Annotation, need chrom. +  seq. start and seq. end positions
+#No end pos. given, created end pos. from mapped end pos. + 2
+
+mappedBed <- cbind(df[14], df[16], df[16] + 2, df$Probe_ID)
+mappedBed <- na.omit(mappedBed)
+
+write.table(mappedBed, file="/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mappedBed.bed", quote=F, sep="\t", row.names=F, col.names=F)
+
+# changing Column names
+
+names(df2)[1] = 'Transcript_Chr'
+names(df2)[2] = 'Transcript_Start'
+names(df2)[3] = 'Trnscript_End'
+names(df2)[4] = 'transcript_chr'
+names(df2)[5] = 'transcriptoriginal_start'
+names(df2)[6] = 'transcriptoriginal_end'
+names(df2)[7] = 'Strand_Orientation'
+names(df2)[8] = 'Annotation_Source'
+names(df2)[9] = 'Annotation_Type'
+names(df2)[10] = 'Gene_Name'
+names(df2)[11] = 'Gene_Annotation'
+names(df2)[12] = 'Annotation_Source'
+names(df2)[13] = 'Ensemble_ID'
+names(df2)[14] = 'Probe_Chr'
+names(df2)[15] = 'Probe_Start'
+names(df2)[16] = 'Probe_End'
+names(df2)[17] = 'Probe_Name'
+names(df2)[18] = 'Probe_Overlap'
+names(df2)[19] = 'CPG_Chromosome'
+names(df2)[20] = 'CPG_Start'
+names(df2)[21] = 'CPG_End'
+names(df2)[22] = 'CPG_Name'
+names(df2)[23] = 'CPG_Overlap'
+names(df2)[24] = 'TSS_Distance'
+
+saveRDS(df2, file = "/mnt/isilon/zhoulab/labprojects/20200228_Mouse_Array_Project/20200721_manifestV2/mm10_LEGX_B3.manifest.sesame-base.cpg-sorted_CPGandGenesAnnotated.rds")
