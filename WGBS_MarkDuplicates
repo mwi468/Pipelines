@@ -1,0 +1,10 @@
+spefify a bam file to process
+# output will be deduplicated bam file and .bai index file
+
+cat <<'EOF' | sbatch --mem=64G -c 10 -t 3-2
+#!/bin/bash
+cd $base
+input=/mnt/isilon/zhoulab/labprojects/20210827_5hmCProject_WI/20210802_ESCs/TAB-seq/GSM1180307/bam/GSM1180307_bis_bt2.bam
+java -Xmx10g -Djava.io.tmpdir=./tmp/ -jar ~/zhoulab/labsoftware/picard/picard-2.23.2.jar MarkDuplicates CREATE_INDEX=true ASSUME_SORTED=true REMOVE_DUPLICATES=true VALIDATION_STRINGENCY=SILENT METRICS_FILE=picard/GSM1180307_bis_bt2.mdup.stats READ_NAME_REGEX=null INPUT=${input} OUTPUT=picard/GSM1180307_bis_bt2.bam TMP_DIR=tmp
+samtools flagstat picard/GSM1180307_bis_bt2.bam > picard/GSM1180307_bis_bt2.bam.flagstat
+EOF
