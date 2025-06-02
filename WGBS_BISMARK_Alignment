@@ -1,0 +1,34 @@
+source $SLURM_ENTRY
+wzref_mm10
+pipeline_prepare
+
+
+#### Processing each FASTQ SEPERATELY
+## multiple run fastq files per sample
+## change wzref based on the genome of sample
+
+
+while read sname; do
+    jump_comments
+
+#### This code can Process each FASTQ SEPERATELY
+##Aligns based on bismark
+
+
+#illumina universal adaptar was identified in fastqc
+
+## Align fastq
+
+        fastq=trim/${sname}
+        direction="--non_directional"
+        bismark_bt2_dir=bam/${sname}_bis_bt2
+        bismark_bt2_bam_unsorted=bam/${sname}_bismark_bt2/${sname}_merged.fq.gz_bismark_bt2.bam
+        bismark_bt2_bam_final=bam/${sname}_bis_bt2.bam
+        hour=48; memG=180; ppn=10; queue=all.q
+        pipeline_depend none
+        pipeline_eval 1 __wgbs_bismark_bowtie2_SE2
+
+
+done << EOM
+GSM1180307.fq.gz
+EOM
