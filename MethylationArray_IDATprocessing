@@ -1,0 +1,63 @@
+#Waleed Iqbal
+
+
+#Get to Poject Directory
+
+cd /mnt/isilon/zhou_lab/projects/20191212_GEO_datasets/GSE110554
+
+
+##Download IDAT file into folder using wget
+#Use "" otherwise doesnt work
+
+wget "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE110554&format=file"
+
+#Change the name
+mv index.html\?acc\=GSE110554\&format\=file  GSE110554_IDAT.tar
+
+##Untar file
+
+#create directory for the untarred IDAT files to store for each sample
+
+mkdir IDAT
+
+tar -C /IDAT -xvf GSE110554_IDAT.tar
+
+
+# Use opensesame function
+
+module load R
+R
+library(tidyverse)
+library(sesame)
+
+dir <- "/mnt/isilon/zhou_lab/projects/20191212_GEO_datasets/GSE110554"
+pfx <- searchIDATprefixes(dir)
+betas <- openSesame(pfx)
+
+#Save betas file
+
+#Save betas file
+
+saveRDS(betas, file = '5.22.2020_OpenSesameBetas.rds')#Waleed Iqbal
+
+
+#Get to Poject Directory
+
+cd /mnt/isilon/zhou_lab/projects/20191212_GEO_datasets/GSE110554
+
+
+##Download IDAT file into folder using wget
+#Use "" otherwise doesnt work
+
+wget "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE110554&format=file"
+
+#Change the name
+mv index.html\?acc\=GSE110554\&format\=file  GSE110554_IDAT.tar
+
+##Untar file
+
+#create directory for the untarred IDAT files to store for each sample
+
+mkdir IDAT
+
+tar -C /IDAT -xvf GSE110554_IDAT.tar
