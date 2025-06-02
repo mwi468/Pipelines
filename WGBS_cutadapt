@@ -1,0 +1,30 @@
+source $SLURM_ENTRY
+wzref_mm10
+pipeline_prepare
+path_to_cutadapt=""
+
+#### Can Process each FASTQ SEPERATELY based on names provided
+## multiple run fastq files per sample
+
+while read sname; do
+    jump_comments
+
+#### Processing each FASTQ SEPERATELY
+
+
+#illumina universal adaptar was identified in fastqc
+
+## Trim fastq
+
+        hour=48; memG=64; ppn=24; queue=all.q
+        pipeline_depend none
+        fastq=${sname}
+        #path_to_cutadap="/scr1/users/zhouw3/labsoftware/anaconda3/bin/cutadapt"
+        pipeline_depend none
+
+        pipeline_eval 1 __wzseq_trim_galore_SE
+
+
+done << EOM
+GSM1180307.fastq
+EOM
