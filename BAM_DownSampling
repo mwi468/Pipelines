@@ -1,0 +1,49 @@
+## Run this in folder which contains the Original BAM you want to downsample 
+# All downsampled BAMs will be stored in created subBAM directory
+# Samtools view onlt takes in a fraction to use for downsampling
+# Downsample by Reads requires to figure out what fraction of total reads corresponds to percentage 
+# $k read counts used for downsampling
+# $j: number of times to downsample 
+# larger iterations for smaller reads (if statement)
+# $frac: calculated fraction to use for downsampling
+# Sam tools can utilize a seed integer to get unique seeds for each downsample iteration: - s {$j}.{$frac}
+
+cat <<'EOF' | sbatch --mem=120 -c 8 -t 3-2
+#!/bin/bash
+
+mkdir subBAM
+
+in=/scr1/users/zhouw3/projects/20211119_5hmC_Project/GSM1180307_ESC_Tab-seq/GSM1180307_bis_bt2d.bam
+out=GSM1180307_bis_bt2d.bam
+
+         
+for k in 550 1100 2200 4400 8800 17600 35200 70400 140800 281600 563200; do
+
+     frac=$(samtools idxstats ${in}| cut -f3 | awk 'BEGIN {total=0} {total += $1} END {frac='${k}'/total; if (frac > 1) {print 1} else {print frac}}')
+
+     frac=$(echo $frac | sed 's/^0*//')
+     #frac=$(echo ${frac:1})
+     
+     echo "$frac"
+     echo "Producing Bam files for k reads based on fraction: ${k}, ${frac} "
+     
+     #echo ${j}${frac}
+                     
+     if [ $((k)) -lt 1000000 ]; then
+
+          for j in {0..49}; do
+                
+                samtools view -b  -@ 8 -s ${j}${frac} ${in} > subBAM/${out}_down_${k}_${j}.bam
+                echo " 10 bams produced"
+                echo "$k, $frac"
+                
+                done
+         else
+              for j in {0..49}; do
+               echo "3 bams produced"
+               echo "$k, $frac"
+               samtools view -b -@ 8 -s ${j}${frac} ${in}> subBAM/${out}_down_${k}_${j}.bam
+               done              
+     fi
+done
+EOF
