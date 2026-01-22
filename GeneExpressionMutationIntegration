@@ -1,0 +1,69 @@
+edata <- readRDS(file = '/Users/iqbalw/DT/GeneExpression/GeneExpressionDifferences.rds' )
+
+#create an newcolumn pairing the immune chromatin pair
+
+edata$CombinedSet <- paste(edata$ImmuneGeneID,"_",edata$MutatedChromatinModulatorGene,"_",edata$CancerType)
+
+mdata <- readRDS(file = '/Users/iqbalw/DT/Methylation/MethylationDifferences.rds' )
+
+mdata$CombinedSet <- paste(mdata$ImmuneGeneID,"_",mdata$MutatedChromatinModulatorGene,"_",mdata$CancerType)
+
+ndata <- data.frame(matrix(NA, nrow = 0, ncol = 8))
+
+names(ndata)[1] <- 'NumberofDifferentiallyMethylatedProbes'
+names(ndata)[2] <- 'ProbeNameList'
+names(ndata)[3] <- 'Probe_PvalueList'
+
+
+
+list1 <- unique(edata$CombinedSet)
+
+
+# keep only the methytion data for the pair set that has gene expression differences
+# need to do same for gene expression data, could be that there is expression pair that was never present in mdata
+mdata <- subset(mdata, CombinedSet %in% list1)
+
+list2 <- unique(mdata$CombinedSet)
+
+#Subset edata for all the mdata sets also
+
+edata <- subset(edata, CombinedSet %in% list2)
+listf <- unique(edata$CombinedSet)
+
+ndata <- data.frame(matrix(NA, nrow = 0, ncol = 8))
+
+
+names(ndata)[1] <- 'NumberofDifferentiallyMethylatedProbes'
+names(ndata)[2] <- 'ProbeNameList'
+names(ndata)[3] <- 'Probe_PvalueList'
+names(ndata)[4:6] <- names(mdata)[(ncol(mdata) - 4) : (ncol(mdata) -2)]
+names(ndata)[7] <- 'NumberofProbes_IncreasedMethylation'
+names(ndata)[8] <- 'NumberofProbes_DecreasedMethylation'
+
+for (i in 1:nrow(edata)){
+  v <- mdata[mdata$CombinedSet == listf[i],]
+  temp <- data.frame(matrix(NA, nrow = 1, ncol = 8))
+  names(temp) <- names(ndata)
+  temp$NumberofDifferentiallyMethylatedProbes <- nrow(v)
+  temp$ProbeNameList <- list(paste(v$ProbeID))
+  temp$Probe_PvalueList <- list(paste(v$P_value))
+  temp$MedianMethylation_Mutated <- list(paste(v$MedianMethylation_Mutated))
+  temp$MedianMethylation_NonMutated <- list(paste(v$MedianMethylation_NonMutated))
+  temp$MedianDifference_MutatedVs.Non <- list(paste(v$MedianDifference_MutatedVs.Non))
+  temp$NumberofProbes_IncreasedMethylation <- nrow(v[v$Effect_on_Methylation == 'Increased',])
+  temp$NumberofProbes_DecreasedMethylation <- nrow(v[v$Effect_on_Methylation == 'Decreased',])
+  ndata <- rbind(ndata,temp)
+  print(i)
+}
+
+CombinedData <- cbind(edata,ndata)
+
+library(DT)
+
+
+saveRDS(CombinedData, file = '/Users/iqbalw/DT/CombinedData2.rds')
+
+y <- datatable(CombinedData, rownames = FALSE) %>%
+  formatStyle(columns = names(CombinedData))
+
+DT::saveWidget(y, paste('/Users/iqbalw/DT/CombinedSummarry.html'))
