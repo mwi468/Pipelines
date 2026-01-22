@@ -1,0 +1,233 @@
+source ~/.bashrc
+cd ~/20221013_ProcessedDatasets/tumor
+
+######### folder for ananlysyis
+cd ~/20221013_ProcessedDatasets/tumor
+#Srun24
+######### cancer dataset 
+cp /mnt/isilon/zhou_lab/projects/20220816_BrainTumorClassifier/20220926_Capper_Reference_betas.rds ~/20221013_ProcessedDatasets/tumor
+######### Brain Pseudobulk studies 
+cp /mnt/isilon/zhoulab/labprojects/20220324_SingleCellMeth/Lee2019/DNAm/hg38_SE_Pseudobulk_subtype/* ~/20221013_ProcessedDatasets/tumor/Lee2019
+cp /mnt/isilon/zhoulab/labprojects/20220324_SingleCellMeth/Luo2017/DNAm/hg38_SE_Pseudobulk_subtype/* ~/20221013_ProcessedDatasets/tumor/Luo2017/
+ cp /mnt/isilon/zhoulab/labprojects/20220324_SingleCellMeth/Luo2022/DNAm/hg38_SE_Pseudobulk_subtype/* ~/20221013_ProcessedDatasets/tumor/Luo2022
+### latest marker CpGs
+cp ~/20191221_references/hg38/features/TissueSignatures.20221201.bed.gz ~/20221013_ProcessedDatasets/tumor/Luo2022
+
+## save RDS as table and reformat expanding 5th  column
+
+zcat TissueSignatures.20221201.bed.gz | awk 'BEGIN {FS="\t|;|[.]"} {OFS="\t"} {print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11}' | sortbed | bgzip > TissueSignatures.FullSeparated.20221201.bed.gz
+
+## only keep ecker signatutres for later use 
+
+zcat TissueSignatures.FullSeparated.20221201.bed.gz | awk '$5=="Ecker" {print $1,$2,$3,$6,$8,$9}' | sortbed | bgzip > TissueSignatures.Ecker.20221201.bed.gz'
+
+############################### Analyze distribution of markers within major and subtype cell groups 
+
+##### load module R
+##### R
+
+rm(list=ls())
+library(data.table)
+library(ggplot2)
+library(tidyverse)
+
+x <- fread("/Users/TumorDatasets/TissueSignatures.Ecker.20221201.bed.gz",header=FALSE)
+x <- data.frame(x)
+
+names(x) <- c('chr','start','end', 'subtype', 'major', 'type')
+
+
+## plotting 
+
+## major cell distribution 
+#pdf('/Users/iqbalw/Dropbox/Family Room/Lab Gallery/iqbalw/20221210.TissueSignatures.Ecker.major.pdf', #width=20, height=8)
+#ggplot(x, aes(x = fct_infreq(major),fill= type)) + geom_bar()+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, ))+ theme(text = element_text(size = 15))+xlab("major")+ylab("Count")+ggtitle("EckerCellSignatures", subtitle = waiver())
+#dev.off()
+
+
+## subtype cell distribution 
+## pdf('/Users/iqbalw/Dropbox/Family Room/Lab Gallery/iqbalw/20221210.TissueSignatures.Ecker.SubType.pdf', width=20, height=8)
+# ggplot(x, aes(x = fct_infreq(major),fill= type)) + geom_bar()+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, ))+ theme(text = element_text(size = 15))+xlab("SubType")+ylab("Count")+ggtitle("EckerCellSignatures", subtitle = waiver())
+#dev.off()
+
+
+## Add CpG coordinates to the tumor array data 
+library(data.table)
+
+# find tissue signatures matching HM450 data
+
+x <- fread("TissueSignatures.Ecker.20221201.bed.gz")
+x$combined <- paste0(x$V1,"_",x$V2,"_",x$V3)
+
+## there are multiple CpGs as markers for different cell types
+
+#length(unique(x$combined))
+#9110574
+
+hm <- fread("HM450.hg38.manifest.tsv.gz")
+hm <- data.frame(hm)
+hm <- hm[,1:5]
+
+hm$combined <- paste0(hm$CpG_chrm,"_",hm$CpG_beg,"_",hm$CpG_end)
+
+TissueSignatures.HM450 <- x[x$combined %in% unique(hm$combined),]
+
+## add probe id 
+TSProbeID <- merge(TissueSignatures.HM450,hm,by="combined")
+
+
+#write.table(TSProbeID,"TissueSignatures.HM450ProbeID.tsv",quote=FALSE, sep='\t', col.names = TRUE, row.names=TRUE)
+
+## subset clapper tumor dataset  with tumor signature cpgs 
+
+se <- readRDS("20221210_Capper_Reference_betas_SE.rds")
+df <- assay(se)
+
+subdf <- df[rownames(df) %in% unique(TSProbeID$probeID),]
+
+#write.table(subdf,"CapperSignatureSubset.tsv",quote=FALSE, sep='\t', col.names = TRUE, row.names=TRUE)
+
+## subset the pseudobulk single cell datasets 
+## Function 20221102_SubestPseudobulk3.R is used and is mofified to utilize MU2betas for the new pseudobulk format
+
+
+cat <<'EOF' | pbsgen -submit -ppn 24 -memG 300 -gpu 1 -days 7
+/mnt/isilon/zhoulab/labsoftware/shared_Renv/shims/Rscript-4.2.0 ~/repo/labjournal/iqbalw/2022/20221102_SubestPseudobulk3.R /mnt/isilon/zhoulab/labprojects/20220324_SingleCellMeth/Lee2019/DNAm/hg38_SE_Pseudobulk_subtype/ /scr1/users/zhouw3/projects/20221013_ProcessedDatasets/tumor/subset/Lee2019/
+EOF
+
+cat <<'EOF' | pbsgen -submit -ppn 24 -memG 300 -gpu 1 -days 7
+/mnt/isilon/zhoulab/labsoftware/shared_Renv/shims/Rscript-4.2.0 ~/repo/labjournal/iqbalw/2022/20221102_SubestPseudobulk3.R /mnt/isilon/zhoulab/labprojects/20220324_SingleCellMeth/Luo2022/DNAm/hg38_SE_Pseudobulk_subtype/ /scr1/users/zhouw3/projects/20221013_ProcessedDatasets/tumor/subset/Luo2022/
+EOF
+
+cat <<'EOF' | pbsgen -submit -ppn 24 -memG 300 -gpu 1 -days 7
+/mnt/isilon/zhoulab/labsoftware/shared_Renv/shims/Rscript-4.2.0 ~/repo/labjournal/iqbalw/2022/20221102_SubestPseudobulk3.R /mnt/isilon/zhoulab/labprojects/20220324_SingleCellMeth/Luo2017/DNAm/hg38_SE_Pseudobulk_subtype/ /scr1/users/zhouw3/projects/20221013_ProcessedDatasets/tumor/subset/Luo2017/
+EOF
+
+### plotting an UMAP
+# R
+
+
+rm(list=ls())
+library(stringr)
+library(ggplot2)
+library(Rtsne)
+library(umap)
+library(tidyverse)
+
+
+df1 <- readRDS("/Users/TumorDatasets/Lee2019.Combined.rds")
+df1 <- df1 %>% select(-contains("Outlier"))
+df1 <- df1 %>% select(-contains("cpg"))
+
+colnames(df1) <- paste0("Lee2019_",colnames(df1))
+
+df2 <- readRDS("/Users/TumorDatasets/Luo2017.Combined.rds")
+df2 <- df2 %>% select(-contains("Outlier"))
+df2 <- df2 %>% select(-contains("cpg"))
+
+colnames(df2) <- paste0("Luo2017_",colnames(df2))
+
+df3 <- readRDS("/Users/TumorDatasets/Luo2022.Combined.rds")
+df3 <- df3 %>% select(-contains("Outlier"))
+df3 <- df3 %>% select(-contains("cpg"))
+
+colnames(df3) <- paste0("Luo2022_",colnames(df3))
+
+# df4 <- readRDS("~/scr/users/zhouw3/projects/20221013_ProcessedDatasets/tmp_pseudobulk/Tumorsubset.rds")
+# df4 <- data.frame(df4)
+# df4 <- df4 %>% select(-contains("Outlier"))
+# df4 <- df4 %>% select(-contains("cpg"))
+
+#colnames(df4)[1:ncol(df4)] <- paste0("Array_Tumor_Brain_Reference")
+
+df <- cbind(df1,df2,df3)
+df <- data.frame(df)
+
+thresholdc = .8* ncol(df)
+thresholdr= .8* ncol(df)
+
+df <- df[rowSums(is.na(df)) <= thresholdc, ]
+#df <- df[,colSums(is.na(df)) <= thresholdr]
+
+
+
+#df4 <- as.data.frame(sapply(df4, as.numeric))
+
+
+#thresholdc2 = ncol(df4)/2
+#thresholdr2= nrow(df4)/2
+
+#df4 <- df4[rowSums(is.na(df4)) <= thresholdc2, ]
+#df4 <- df4[,colSums(is.na(df4)) <= thresholdr2]
+
+#df <- df[rownames(df) %in% rownames(df4),]
+#df4 <- df4[order(match(rownames(df4),rownames(df))),] 
+
+names <- data.frame(colnames(df))
+
+lst <- str_split_fixed(names$colnames.df., "_",n=5)
+lst <- data.frame(lst)
+names$major=paste0(lst$X2,"_",lst$X3,"_",lst$X4)
+names$study=paste0(lst$X1)
+
+meth1 <-  data.frame(t(df))
+meth1 <- as.data.frame(sapply(meth1, as.numeric))
+
+SimpleImputation <- function(matrix,minCoverage) {
+  require(stringr)
+  dtt <- matrix   #[, which(colMeans(!is.na(matrix)) >= as.numeric(minCoverage))]
+  #dim(dtt)
+  k <- which(is.na(dtt), arr.ind=TRUE)
+  if (length(k) > 0) { 
+    dtt[k] <- colMeans(dtt, na.rm = TRUE)[k[,2]]
+  }
+  else{}
+  return(dtt)}
+
+
+NA2mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+replace(meth1, TRUE, lapply(meth1, NA2mean))
+
+cov <- 0
+methm <- SimpleImputation(meth1)
+
+library(umap)
+d <- umap(meth2,n_neighbors=12,n_epochs=100, nn_method="fnn",metric = "cosine",init="random")
+
+#df4 <-  data.frame(t(df4))
+#df4 <- as.data.frame(sapply(df4, as.numeric))
+
+#cov <- .5
+#df4 <- SimpleImputation(df4,cov)
+
+#perturbed.embedding = predict(d, df4)
+
+
+dm <- data.frame(d$layout)
+
+dm$Type <- paste(names$major)
+dm$Study <- names$study
+
+
+P<-ggplot(dm,aes(x = X1, 
+              y = X2, 
+              color = Type,
+              shape = Study))+ geom_point(size=2)+labs(x = "UMAP1",y = "UMAP2",subtitle = "UMAP plot")+ scale_color_manual(name = "Major Cell Type",labels = c("Exc_L1.3_CUX2","Exc_L2.4_RORB","Exc_L4_PLCH1","Exc_L4.5_FOXP2", "Exc_L4.5_TOX", 
+                                                                                                           "Exc_L4.6_LRRK1","Exc_L5.6_PDZRN4",
+                                                                                                            "Exc_L6_TLE4","Exc_L6_TSHZ2","Inh_CGE.MGE_CHST9","Inh_CGE_LAMP5","Inh_CGE_NDNF",
+                                                                                                           "Inh_CGE_VIP","Inh_CGE.MGE_CHST9","Inh_MGE_B3GAT2","Inh_MGE_CALB1","Inh_MGE_PVALB",
+                                                                                                           "Inh_MGE_UNC5B","NonN_Astro_FGF3R","NonN_Micro.Endo_TYROBP","NonN_Oligo_MBP",
+                                                                                                           "Exc_L6_TSHZ2"),
+                                                                                                values = c("#1f77b4","#205a83","#ff6347","#9a2526","#daa520","#8c564b","#d62728",
+                                                                                                           "#ff7f0e","#b56014","#b26199","#e377c2","#824c71","#ea9dd3","#775596","#b393d0",
+                                                                                                           "#9467bd","#5a446f","#298029","#266026","#2ca02c")
+  )+theme(text = element_text(size = 20))+labs(shape = "Study")
+  
+  
+  
+  
+  
+  
+ggsave("/Users/iqbalw/Dropbox/Family Room/Lab Gallery/iqbalw/20221110.BrainSingleCellUMAP_HM450signatures.pdf",P, width = 10, height = 5, dpi=300, scale=1.5)
+
+
