@@ -1,0 +1,72 @@
+
+library(phangorn)
+library(ape)
+library(phylobase)
+  
+#Waleed Iqbal
+  
+  
+# Load the different files (All probes that had intermediate or NA after combining consensus cell types, as well as Probes with 0 Parsimony have beeen removed)
+
+#Binary  Unmethylated as 0 and Methylated as 1, Needed for ape
+df  <- readRDS(file = '/mnt/isilon/zhou_lab/projects/20191212_GEO_datasets/GSE110554/6.24.2020_AlRelevantProbes.rds')
+
+#Binary  Unmethylated as a and Methylated as g, Needed for phangorn tree construction
+df2 <- readRDS(file = '/mnt/isilon/zhou_lab/projects/20191212_GEO_datasets/GSE110554/6.24.2020_AlRelevantProbesConverted.rds')
+
+## Creating Tree to work with
+
+DF <- phyDat(df2) #Phangorn needs  phyDatformat  type to work with
+dm <- dist.hamming(DF) # Distance matrix based on hamming distance, between different cell type samples (rows)
+tree <- upgma(dm)
+
+##Empty dataframe to store values
+
+tdf <- data.frame(matrix(ncol = ncol(df), nrow = tree$Nnode))
+
+#Internal Node Reconstruction based on ace
+
+for(i in 1:ncol(df))
+{
+  MLreconstruction <- ace(df[,i], tree, type="continuous", method="ML")
+  tdf[,i] <- MLreconstruction$ace
+  print((i/(ncol(df))*100))  # % of task completed
+  tree <- upgma(dm)
+  
+  ##Empty dataframe to store values
+  
+  tdf <- data.frame(matrix(ncol = ncol(df), nrow = tree$Nnode))
+  
+  #Internal Node Reconstruction based on ace
+  
+  for(i in 1:ncol(df))
+  {
+    MLreconstruction <- ace(df[,i], tree, type="continuous", method="ML")
+    tdf[,i] <- MLreconstruction$ace
+    print((i/(ncol(df))*100))  # % of task completed
+  }
+  
+  rownames(tdf) <- names(MLreconstruction$ace)
+  names(tdf) <- colnames(df)
+  
+  
+  # Ace outputs a range of numbers from 0 to 1, these can be converted based on threshold below
+  for(i in 1:nrow(tdf))
+  {
+    for(k in 1:ncol(tdf))
+    {
+      if (tdf[i,k] <= .33) {    # convert to 0
+        tdf[i,k] = 0
+      }else if (tdf[i,k] >= .66) { # Convert to 1
+        tdf[i,k] = 1
+      } else {
+        tdf[i,k] = .5        #convert to .5
+      }
+    }
+  }
+  
+  df <- rbind(df, tdf)
+  
+  saveRDS(tdf, file = '/mnt/isilon/zhou_lab/projects/20191212_GEO_datasets/GSE110554/6.29.2020.ProbeReconstructedSequences.rds')
+  
+  
